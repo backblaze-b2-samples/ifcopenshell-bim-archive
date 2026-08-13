@@ -6,20 +6,25 @@ product
 
 ## Users
 
-AI coding agents and "vibe coders" (developers who lean on AI to move fast) who clone
-this kit as the foundation for a new full-stack app. Their context: they want to skip
-the boilerplate loop (dashboard, upload, file browser, cloud storage wiring) and go
-straight to building their app's unique features. They read the repo, keep the shared
-scaffolding, and rebrand + rewrite the dashboard for their own use case.
+AEC data engineers, BIM managers, and AI/dev teams evaluating Backblaze B2 as the
+long-term store for large BIM/IFC model archives with heavy derived-artifact fan-out.
+Their context: they have IFC models, they need to parse/mesh/analyze them, and they
+want the source models and every derived artifact archived on cheap, S3-compatible
+object storage that serves them back to viewers and coordination tools. Coding agents
+also read this repo as a worked example of wiring a local OSS engine (IfcOpenShell) to
+B2.
 
 ## Product Purpose
 
-An engineering-grade full-stack starter kit (Next.js 16 + React 19 + Tailwind v4 +
-shadcn/ui frontend, FastAPI backend) with Backblaze B2 cloud storage integrated out of
-the box. It ships a dashboard, drag-and-drop upload, and a file browser so builders
-start from a working app, not a blank page. Success = a builder can clone it, run it,
-rebrand it via one config file, and trust every screen enough to build on top without
-first fixing it.
+A full-stack BIM digital-twin archive (Next.js 16 + React 19 + Tailwind v4 + shadcn/ui
+frontend, FastAPI backend) that ingests IFC building models, runs IfcOpenShell locally
+to parse metadata, extract geometry to OBJ, and analyze quantities + clash candidates,
+and archives every source model and derived artifact on Backblaze B2 indexed by a
+per-project manifest. The headline is **write amplification**: a few megabytes of IFC
+fan out into much larger derived artifacts, and B2 is the single layer holding all of
+it. Success = a user can create a project, ingest models (or load samples), run the
+pipeline end-to-end with real IfcOpenShell calls, and see the archived artifacts and
+the write-amplification ratio — with B2 as the only required credential.
 
 ## Maturity and Support Boundary
 

@@ -2,11 +2,20 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    b2_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
-    b2_key_id: str = ""
+    # B2 credentials + target bucket. Standard B2_* env var names (see
+    # .env.example). The S3 endpoint is DERIVED from B2_REGION rather than
+    # configured directly, so a fork only picks a region — no hand-built URL.
+    b2_application_key_id: str = ""
     b2_application_key: str = ""
     b2_bucket_name: str = ""
-    b2_public_url: str = ""
+    b2_region: str = ""
+    # Optional public base URL for a public bucket (builds direct object URLs).
+    # The app runs fine without it — object serving falls back to presigned URLs.
+    b2_public_url_base: str = ""
+    # Advanced override: set only to point at a non-standard S3 endpoint. Empty
+    # by default; the endpoint is otherwise derived from b2_region (see
+    # `b2_endpoint`). Never hardcode a region into source — it comes from here.
+    b2_endpoint_override: str = ""
 
     api_port: int = 8000
     # Interactive API docs (/docs, /redoc, /openapi.json). On by default for
@@ -70,6 +79,19 @@ class Settings(BaseSettings):
     download_count_file: str = ".data/download_count.json"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def b2_endpoint(self) -> str:
+        """The S3-compatible endpoint for the configured region.
+
+        Derived from `b2_region` (e.g. `us-west-004` ->
+        `https://s3.us-west-004.backblazeb2.com`) so the region is the single
+        knob and no endpoint URL is hardcoded in source. `b2_endpoint_override`
+        wins when set, for non-standard/self-hosted S3 gateways.
+        """
+        if self.b2_endpoint_override:
+            return self.b2_endpoint_override
+        return f"https://s3.{self.b2_region}.backblazeb2.com"
 
     @property
     def cors_origins(self) -> list[str]:

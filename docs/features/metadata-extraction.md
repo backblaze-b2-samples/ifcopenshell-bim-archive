@@ -2,7 +2,26 @@
 # Feature: Metadata Extraction
 
 ## Purpose
-Extract rich metadata (checksums, image/PDF fields) from stored objects, on demand. Since uploads go directly to B2, this no longer runs at upload — it is computed only when the Files browser asks for it.
+Extract structured metadata from stored objects. The **primary** path for this
+BIM archive is **IFC parsing**: IfcOpenShell reads each model's header and entity
+tree — schema, storeys, spaces, elements, and property sets — into the JSON
+archived at `projects/<slug>/metadata/<model>.json` (see
+[IFC pipeline](ifc-pipeline.md), `repo/ifc_engine.parse_entity_tree`). A BIM
+archive may also hold reference PDFs and renders; for those, the **secondary**
+image/PDF path below extracts checksums and format fields on demand.
+
+## IFC entity-tree parsing (primary)
+- Produced during `POST /projects/{slug}/run`, archived as
+  `projects/<slug>/metadata/<model>.json`
+- `repo/ifc_engine.parse_entity_tree(model)` returns: `schema`, `project_name`,
+  `counts` (elements/spaces/storeys), `type_counts` (by IfcType), `storeys`
+  (name + elevation), `spaces` (name + long name), and `elements` (global id,
+  IfcType, name, containing storey, and property sets)
+- Property sets are read with `ifcopenshell.util.element.get_psets`
+- This is what powers the model-insight panel and the quantity take-off
+
+## Image/PDF metadata (secondary — reference assets)
+Extract rich metadata (checksums, image/PDF fields) from stored reference objects, on demand. Since uploads go directly to B2, this no longer runs at upload — it is computed only when the Files browser asks for it.
 
 ## Used By
 - API: `POST /upload/verify` — the direct-to-B2 upload no longer streams bytes through the API, so extraction no longer runs at upload and the verify response returns `metadata: null`

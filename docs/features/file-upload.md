@@ -3,7 +3,15 @@
 
 ## Purpose
 Upload files from the browser **directly to Backblaze B2** with real-time
-progress tracking. The bytes never pass through the API, so uploads are not
+progress tracking.
+
+> **Upload doubles as project ingest.** The generic `/upload` page writes to the
+> shared `uploads/` prefix (full-bucket). Each **project** additionally has its
+> own project-scoped ingest that presigns a direct browser→B2 PUT into
+> `projects/<slug>/models/<discipline>/` — same direct-to-B2 mechanism, scoped to
+> a project (see [Projects](projects.md) and [IFC pipeline](ifc-pipeline.md)).
+
+The bytes never pass through the API, so uploads are not
 capped by Vercel's ~4.5 MB Function payload limit — the same flow handles up to
 `max_file_size` (100 MB default) on local, Railway, and Vercel alike, and is a
 direct showcase of B2 as the storage layer.

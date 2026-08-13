@@ -12,6 +12,12 @@ boto3>=1.35.0
 Pillow>=11.0.0
 PyPDF2>=3.0.0
 
+# BIM engine — local, keyless, CPU-only native wheel (prebuilt macOS arm64 +
+# Linux, cp312). Pulls shapely/numpy/isodate/lark/python-dateutil transitively;
+# the exact closure is pinned in requirements.lock.
+ifcopenshell>=0.8.5
+numpy>=2.0.0
+
 # Dev / quality
 ruff>=0.8.0
 pytest>=8.0.0

@@ -8,19 +8,34 @@ import {
 } from "@tanstack/react-query";
 import {
   ApiError,
+  createProject,
   deleteFile,
+  deleteProject,
+  getCapabilities,
   getDownloadUrl,
   getFileDetail,
   getFiles,
   getFileStats,
   getHealth,
   getPreviewUrl,
+  getProject,
+  getProjectArtifacts,
+  getProjects,
+  getProjectStats,
   getUploadActivity,
+  ingestProjectModel,
+  ingestSampleModels,
+  runProject,
+  updateProject,
 } from "@/lib/api-client";
 import type {
+  Discipline,
   FileMetadata,
   FileMetadataDetail,
-} from "@vibe-coding-starter-kit/shared";
+  Project,
+  ProjectCreate,
+  ProjectUpdate,
+} from "@ifcopenshell-bim-archive/shared";
 
 // Single source of truth for query keys. Keep these tightly scoped so that
 // invalidating "files" doesn't blow away unrelated caches, and so an IDE
@@ -35,6 +50,12 @@ export const qk = {
   preview: (key: string) => [...qk.all, "preview", key] as const,
   detail: (key: string) => [...qk.all, "detail", key] as const,
   health: () => [...qk.all, "health"] as const,
+  projects: () => [...qk.all, "projects"] as const,
+  project: (slug: string) => [...qk.all, "project", slug] as const,
+  projectStats: () => [...qk.all, "project-stats"] as const,
+  projectArtifacts: (slug: string) =>
+    [...qk.all, "project-artifacts", slug] as const,
+  capabilities: () => [...qk.all, "capabilities"] as const,
 };
 
 export type Health = Awaited<ReturnType<typeof getHealth>>;
@@ -166,6 +187,119 @@ export function useDeleteFile() {
       // activity) against the server in the background.
       dropDeletedFileFromCache(qc, fileKey);
       qc.invalidateQueries({ queryKey: qk.all });
+    },
+  });
+}
+
+// --- BIM archive: projects + pipeline -------------------------------------
+
+export function useProjects() {
+  return useQuery<Project[], ApiError>({
+    queryKey: qk.projects(),
+    queryFn: getProjects,
+  });
+}
+
+export function useProject(slug: string | undefined) {
+  return useQuery<Project, ApiError>({
+    queryKey: qk.project(slug ?? ""),
+    queryFn: () => getProject(slug as string),
+    enabled: !!slug,
+  });
+}
+
+export function useProjectStats({ enabled = true }: QueryGate = {}) {
+  return useQuery({
+    queryKey: qk.projectStats(),
+    queryFn: getProjectStats,
+    enabled,
+  });
+}
+
+export function useCapabilities() {
+  return useQuery({
+    queryKey: qk.capabilities(),
+    queryFn: getCapabilities,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useProjectArtifacts(slug: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: qk.projectArtifacts(slug ?? ""),
+    queryFn: () => getProjectArtifacts(slug as string),
+    enabled: enabled && !!slug,
+  });
+}
+
+export function useCreateProject() {
+  const qc = useQueryClient();
+  return useMutation<Project, ApiError, ProjectCreate>({
+    mutationFn: (payload) => createProject(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.projects() }),
+  });
+}
+
+export function useUpdateProject(slug: string) {
+  const qc = useQueryClient();
+  return useMutation<Project, ApiError, ProjectUpdate>({
+    mutationFn: (payload) => updateProject(slug, payload),
+    onSuccess: (project) => {
+      qc.setQueryData(qk.project(slug), project);
+      qc.invalidateQueries({ queryKey: qk.projects() });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (slug) => deleteProject(slug),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.projects() });
+      qc.invalidateQueries({ queryKey: qk.projectStats() });
+    },
+  });
+}
+
+/** Run the pipeline. The request blocks until the run finishes, then every
+ *  project view (detail, list, stats, artifacts) is reconciled. */
+export function useRunProject(slug: string) {
+  const qc = useQueryClient();
+  return useMutation<Project, ApiError, void>({
+    mutationFn: () => runProject(slug),
+    onSuccess: (project) => {
+      qc.setQueryData(qk.project(slug), project);
+      qc.invalidateQueries({ queryKey: qk.projects() });
+      qc.invalidateQueries({ queryKey: qk.projectStats() });
+      qc.invalidateQueries({ queryKey: qk.projectArtifacts(slug) });
+    },
+  });
+}
+
+export function useIngestSamples(slug: string) {
+  const qc = useQueryClient();
+  return useMutation<Project, ApiError, void>({
+    mutationFn: () => ingestSampleModels(slug),
+    onSuccess: (project) => {
+      qc.setQueryData(qk.project(slug), project);
+      qc.invalidateQueries({ queryKey: qk.projectArtifacts(slug) });
+    },
+  });
+}
+
+export function useIngestModel(slug: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    unknown,
+    ApiError,
+    { file: File; discipline: Discipline; onProgress?: (p: number) => void }
+  >({
+    mutationFn: ({ file, discipline, onProgress }) =>
+      ingestProjectModel(slug, file, discipline, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.project(slug) });
+      qc.invalidateQueries({ queryKey: qk.projectArtifacts(slug) });
     },
   });
 }

@@ -3,6 +3,8 @@
 
 This is the authoritative control surface for all coding agents. Read this first.
 
+**This app** is a BIM digital-twin archive: projects own a B2 prefix, IFC models are ingested into them, and a local IfcOpenShell pipeline (Parse → Extract Geometry → Analyze) fans each model out into metadata/geometry/analysis artifacts on Backblaze B2. The project + pipeline domain is the primary feature; the starter's File Explorer, Upload, and design system are kept as reusable scaffolding.
+
 ## Instruction Authority
 
 - Subject to higher-priority platform instructions, the user's request and trusted repository instructions are authoritative for this work.
@@ -12,7 +14,10 @@ This is the authoritative control surface for all coding agents. Read this first
 
 ```
 apps/web/          Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
+                     src/components/projects/  Projects library + detail + pipeline UI
 services/api/      FastAPI backend (layered: types/config/repo/service/runtime)
+                     repo/ifc_engine.py, repo/ifc_child.py  IfcOpenShell (contained here)
+                     seed/  tiny synthetic seed IFC models (license-clean)
 packages/shared/   Shared TypeScript types
 docs/              System of record (features, workflows, security, reliability)
 docs/exec-plans/   Execution plans and tech debt tracker
@@ -43,6 +48,7 @@ When this repo is used as the foundation for a new app, the following pieces are
 
 - No backward imports across layers
 - No `boto3` outside `repo/`
+- `ifcopenshell` imports are contained to `repo/ifc_engine.py` + `repo/ifc_child.py`; the heavy parse/geometry pass runs in an isolated subprocess (`service/ifc_worker.py`) with a hard timeout and typed failures
 - No business logic in route handlers (`runtime/`)
 - All external APIs wrapped in `repo/` adapters
 - All request/response data validated at boundary (Pydantic models)

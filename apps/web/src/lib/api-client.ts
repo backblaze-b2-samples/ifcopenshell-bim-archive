@@ -1,11 +1,18 @@
 import type {
+  ArtifactEntry,
   DailyUploadCount,
+  Discipline,
   FileMetadata,
   FileMetadataDetail,
   FileUploadResponse,
   PresignUploadResponse,
+  Project,
+  ProjectCreate,
+  ProjectStats,
+  ProjectUpdate,
+  ServerCapabilities,
   UploadStats,
-} from "@vibe-coding-starter-kit/shared";
+} from "@ifcopenshell-bim-archive/shared";
 
 // Single-origin deploys (Vercel `services`: one project serving web + API) put
 // the API under /api on the same origin, so no NEXT_PUBLIC_API_URL is needed —
@@ -17,7 +24,7 @@ export const API_BASE =
   (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
 
 type ApiClientRoute = {
-  method: "delete" | "get" | "post";
+  method: "delete" | "get" | "patch" | "post";
   path: string;
 };
 
@@ -41,7 +48,29 @@ export const API_CLIENT_ROUTES = {
   // payload ceiling no longer caps upload size.
   uploadPresign: { method: "post", path: "/upload/presign" },
   uploadVerify: { method: "post", path: "/upload/verify" },
+  // BIM archive: projects + IfcOpenShell pipeline. `{slug}` matches the FastAPI
+  // path template so the OpenAPI contract test lines up exactly.
+  projects: { method: "get", path: "/projects" },
+  projectCreate: { method: "post", path: "/projects" },
+  projectStats: { method: "get", path: "/projects/stats" },
+  projectCapabilities: { method: "get", path: "/projects/capabilities" },
+  project: { method: "get", path: "/projects/{slug}" },
+  projectUpdate: { method: "patch", path: "/projects/{slug}" },
+  projectDelete: { method: "delete", path: "/projects/{slug}" },
+  projectRun: { method: "post", path: "/projects/{slug}/run" },
+  projectIngestSamples: { method: "post", path: "/projects/{slug}/ingest-samples" },
+  projectIngestPresign: { method: "post", path: "/projects/{slug}/ingest/presign" },
+  projectArtifacts: { method: "get", path: "/projects/{slug}/artifacts" },
+  projectArtifactDownload: {
+    method: "get",
+    path: "/projects/{slug}/artifacts/download",
+  },
 } as const satisfies Record<string, ApiClientRoute>;
+
+/** Substitute a project slug into a `{slug}` path template. */
+function slugPath(path: string, slug: string): string {
+  return path.replace("{slug}", encodeURIComponent(slug));
+}
 
 /** Typed API error with HTTP status code for caller-side branching. */
 export class ApiError extends Error {
@@ -324,4 +353,102 @@ function putFileToStorage(
     }
     xhr.send(file);
   });
+}
+
+// --- BIM archive: projects + pipeline -------------------------------------
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+export async function getProjects() {
+  return apiFetch<Project[]>(API_CLIENT_ROUTES.projects.path);
+}
+
+export async function getProject(slug: string) {
+  return apiFetch<Project>(slugPath(API_CLIENT_ROUTES.project.path, slug));
+}
+
+export async function getProjectStats() {
+  return apiFetch<ProjectStats>(API_CLIENT_ROUTES.projectStats.path);
+}
+
+export async function getCapabilities() {
+  return apiFetch<ServerCapabilities>(
+    API_CLIENT_ROUTES.projectCapabilities.path
+  );
+}
+
+export async function createProject(payload: ProjectCreate) {
+  return apiFetch<Project>(API_CLIENT_ROUTES.projectCreate.path, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProject(slug: string, payload: ProjectUpdate) {
+  return apiFetch<Project>(slugPath(API_CLIENT_ROUTES.projectUpdate.path, slug), {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProject(slug: string) {
+  return apiFetch<{ deleted: boolean; slug: string; objects_removed: number }>(
+    slugPath(API_CLIENT_ROUTES.projectDelete.path, slug),
+    { method: "DELETE" }
+  );
+}
+
+export async function runProject(slug: string) {
+  return apiFetch<Project>(slugPath(API_CLIENT_ROUTES.projectRun.path, slug), {
+    method: "POST",
+  });
+}
+
+export async function ingestSampleModels(slug: string) {
+  return apiFetch<Project>(
+    slugPath(API_CLIENT_ROUTES.projectIngestSamples.path, slug),
+    { method: "POST" }
+  );
+}
+
+export async function getProjectArtifacts(slug: string) {
+  return apiFetch<ArtifactEntry[]>(
+    slugPath(API_CLIENT_ROUTES.projectArtifacts.path, slug)
+  );
+}
+
+export async function getArtifactDownloadUrl(slug: string, key: string) {
+  return apiFetch<{ url: string }>(
+    `${slugPath(API_CLIENT_ROUTES.projectArtifactDownload.path, slug)}?key=${encodeURIComponent(key)}`
+  );
+}
+
+/**
+ * Ingest a bring-your-own IFC model into a project: presign a project-scoped
+ * PUT, upload the bytes straight to B2 (bypassing the API payload ceiling),
+ * then let the caller refetch the project (models are derived from the bucket).
+ */
+export async function ingestProjectModel(
+  slug: string,
+  file: File,
+  discipline: Discipline,
+  onProgress?: (percent: number) => void
+): Promise<PresignUploadResponse> {
+  const presign = await apiFetch<PresignUploadResponse>(
+    slugPath(API_CLIENT_ROUTES.projectIngestPresign.path, slug),
+    {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        filename: file.name,
+        discipline,
+        content_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+      }),
+    }
+  );
+  await putFileToStorage(presign, file, onProgress);
+  return presign;
 }

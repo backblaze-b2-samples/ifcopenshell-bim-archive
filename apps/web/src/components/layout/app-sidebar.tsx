@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Upload, FolderOpen, Settings, Sparkles } from "lucide-react";
+import {
+  LayoutDashboard,
+  Upload,
+  FolderOpen,
+  Settings,
+  Sparkles,
+  Building2,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -19,6 +26,7 @@ import { APP_NAME } from "@/lib/app-config";
 
 const navItems = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Projects", href: "/projects", icon: Building2 },
   { title: "Upload", href: "/upload", icon: Upload },
   { title: "Files", href: "/files", icon: FolderOpen },
   { title: "Settings", href: "/settings", icon: Settings },
@@ -51,7 +59,11 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname === item.href ||
+                      pathname.startsWith(`${item.href}/`);
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
@@ -108,7 +120,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border px-4 py-3">
         <a
-          href="https://www.backblaze.com/cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start"
+          href="https://www.backblaze.com/cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-ifcopenshell-bim-archive"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

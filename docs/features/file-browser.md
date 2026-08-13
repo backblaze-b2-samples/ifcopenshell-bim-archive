@@ -4,6 +4,14 @@
 ## Purpose
 List, preview, download, and delete files stored in Backblaze B2.
 
+> **Two explorers, by design.** This `/files` page is the **full-bucket** File
+> Explorer — it browses *everything* in the bucket and is a non-negotiable keep
+> from the starter. It is complemented by the **project-scoped asset explorer**
+> on each project detail page, which lists only the objects under
+> `projects/<slug>/` (source models + derived artifacts). The full-bucket view is
+> "browse everything"; the asset explorer is the additive per-project view. Both
+> coexist.
+
 ## Used By
 - UI: `/files` page, file browser component
 - API: `GET /files`, `GET /files-by-key/metadata?key=...`, `GET /files-by-key/detail?key=...`, `GET /files-by-key/download?key=...`, `GET /files-by-key/preview?key=...`, `DELETE /files-by-key?key=...`

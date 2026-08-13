@@ -1,22 +1,31 @@
 <!-- last_verified: 2026-08-06 -->
 # Architecture
 
+This is a BIM digital-twin archive: projects own a B2 prefix, IFC models are
+ingested into them, and a local IfcOpenShell pipeline fans each model out into
+metadata, geometry, and analysis artifacts archived on B2. The starter's
+full-bucket File Explorer, Upload, and design system are kept as-is; the project
++ pipeline domain is layered on top.
+
 ## Components
 
 - **apps/web/** — Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
-  - Dashboard with stats, upload chart, recent uploads
-  - File upload with drag-and-drop, progress tracking
-  - File browser with preview, download, delete
+  - **Projects** library + detail: create/read/edit/delete/run, pipeline
+    timeline, BIM stats, write-amplification panel, project-scoped asset explorer
+  - Dashboard with archive-wide write amplification + project/model counts, plus
+    upload stats, chart, recent uploads
+  - Full-bucket file browser (preview, download, delete) and drag-and-drop upload
   - Dark mode via `next-themes`
 - **services/api/** — FastAPI backend (layered architecture)
-  - REST API for file upload, listing, deletion
-  - B2 S3 integration via boto3
-  - File metadata extraction (images, PDFs)
-  - Health check endpoint with B2 connectivity verification
-  - Structured JSON logging with request tracing
-  - Prometheus-format metrics endpoint
+  - REST API for projects, the IfcOpenShell pipeline run, ingest, and artifacts
+  - **IfcOpenShell** engine wrapper (parse entity tree, mesh geometry to OBJ,
+    quantity take-off + bounding-box clash candidates), run in an isolated
+    subprocess with a hard timeout
+  - B2 S3 integration via boto3; per-project `manifest.json` as the record
+  - File metadata extraction (IFC header/entity-tree, plus images, PDFs)
+  - Health check, structured JSON logging, Prometheus-format metrics endpoint
 - **packages/shared/** — TypeScript type definitions
-  - Mirrors Pydantic models from the API
+  - Mirrors Pydantic models from the API (files + project domain)
   - Consumed by `apps/web/` as workspace dependency
 
 ## Backend Layering
@@ -49,13 +58,20 @@ runtime/   FastAPI routes — calls service, never repo directly
 services/api/
   main.py                  App entrypoint, middleware, router registration
   app/
-    types/                 Pydantic models (FileMetadata, UploadStats, etc.)
-    config/                Settings loaded from environment
-    repo/                  B2 S3 client (data access layer)
-    service/               Business logic (upload, files, metadata)
-    runtime/               FastAPI route handlers
-  tests/                   pytest tests (structural + integration)
+    types/                 Pydantic models (FileMetadata, Project, BimStats, ...)
+    config/                Settings loaded from environment (B2_REGION-derived endpoint)
+    repo/                  B2 S3 client + manifest/artifact I/O + IfcOpenShell engine
+                           (b2_client, artifacts, manifest, ifc_engine, ifc_child)
+    service/               Business logic (upload, files, projects, ingest,
+                           archive_runner, ifc_worker)
+    runtime/               FastAPI route handlers (files, upload, projects, ...)
+  seed/                    Tiny synthetic seed IFC models (license-clean)
+  tests/                   pytest tests (structural + integration + engine)
 ```
+
+IfcOpenShell imports are contained to `repo/ifc_engine.py` (authoring + parse +
+analyze) and `repo/ifc_child.py` (the subprocess geometry entrypoint). `boto3`
+stays only in `repo/`.
 
 ## Boundary Invariants
 
@@ -87,12 +103,28 @@ services/api/
 
 External provisioning and deployment remain explicit user-approved actions.
 
+## IfcOpenShell pipeline & subprocess isolation
+
+The `run` path (`service/archive_runner.py`) downloads each source IFC from B2,
+then runs the heavy parse + geometry + analyze pass in an **isolated subprocess**
+(`service/ifc_worker.py` → `python -m app.repo.ifc_child`) with a hard timeout.
+The child writes metadata JSON, per-element OBJ meshes, and axis-aligned bounding
+boxes; the runner uploads them (metadata JSON, geometry OBJ zip), aggregates
+quantity take-off and cross-model clash candidates, computes write amplification
+from B2 object sizes, and persists the manifest. Worker failures are typed
+(`IfcParseError` / `IfcTimeout` / `IfcCrashed`, the last covering a native
+segfault) so a crashing geometry pass surfaces as a failed run instead of wedging
+the API. IfcOpenShell is CPU-only — there is no GPU path.
+
 ## Data Stores
 
-- **Backblaze B2** — object storage (S3-compatible API)
-  - All uploaded files stored in a single bucket
-  - File listing and metadata via S3 `list_objects_v2` / `head_object`
-  - No application database — B2 is the sole data store
+- **Backblaze B2** — object storage (S3-compatible API), the sole data store
+  - Source IFC models and every derived artifact stored under a per-project
+    prefix (`projects/<slug>/...`)
+  - The canonical per-project index is `projects/<slug>/manifest.json` — **no
+    application database**; the manifest IS the record. The model list and
+    write-amplification are re-derived live from B2 object sizes on read.
+  - Listing and metadata via S3 `list_objects_v2` / `head_object`
 
 ## External Services
 
@@ -108,10 +140,12 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 
 ## Data Flows
 
-- **Upload**: Browser -> `POST /upload/presign` (API validates the declared file + signs a PUT) -> Browser PUTs bytes **directly to B2** -> `POST /upload/verify` (API HEADs + Range-sniffs the stored object) -> response
-- **List**: Browser -> `GET /files` -> service calls repo -> returns file list
-- **Download**: Browser -> `GET /files/{key}/download` -> service validates key -> repo generates presigned URL -> browser downloads
-- **Delete**: Browser -> `DELETE /files/{key}` -> service validates key -> repo deletes from B2
+- **Create project**: Browser -> `POST /projects` -> service writes `manifest.json` under a new slug prefix
+- **Ingest**: `POST /projects/{slug}/ingest-samples` (server authors synthetic IFC and puts them under the prefix) OR `POST /projects/{slug}/ingest/presign` -> browser PUTs an IFC **directly to B2** under `projects/{slug}/models/<discipline>/`
+- **Run pipeline**: Browser -> `POST /projects/{slug}/run` -> runner downloads each model from B2 -> isolated IfcOpenShell subprocess (parse + mesh + AABB) -> uploads metadata/geometry/analysis -> updates manifest (status, BIM stats, write amplification)
+- **Artifacts**: `GET /projects/{slug}/artifacts` lists project-scoped objects; `GET /projects/{slug}/artifacts/download?key=` presigns one for downstream serving
+- **Upload**: Browser -> `POST /upload/presign` -> Browser PUTs bytes **directly to B2** -> `POST /upload/verify`
+- **List / Download / Delete** (full-bucket): `GET /files`, `GET /files/{key}/download`, `DELETE /files/{key}`
 
 ## Observability
 
@@ -134,23 +168,30 @@ silently drift from FastAPI. `GET /metrics` is intentionally server-only.
 
 ## Canonical Files
 
-- Layered API handler: `services/api/app/runtime/upload.py`
-- Service orchestration: `services/api/app/service/upload.py`
+- Projects router: `services/api/app/runtime/projects.py`
+- Project store: `services/api/app/service/projects.py`
+- Pipeline run: `services/api/app/service/archive_runner.py`
+- Subprocess worker: `services/api/app/service/ifc_worker.py`
+- IfcOpenShell engine: `services/api/app/repo/ifc_engine.py` (+ `repo/ifc_child.py`)
+- Manifest / artifact I/O: `services/api/app/repo/manifest.py`, `repo/artifacts.py`
 - B2 data access (repo layer): `services/api/app/repo/b2_client.py`
-- Pydantic models: `services/api/app/types/` (`files.py`, `upload.py`, `stats.py`, `formatting.py`)
+- Pydantic models: `services/api/app/types/` (`projects.py`, `files.py`, `upload.py`, `stats.py`, `formatting.py`)
 - Config (pydantic-settings): `services/api/app/config/settings.py`
-- Structural tests: `services/api/tests/test_structure.py`
-- OpenAPI contract: `docs/api/openapi.json`
-- OpenAPI exporter: `services/api/scripts/export_openapi.py`
-- Frontend API client: `apps/web/src/lib/api-client.ts`
+- Structural tests: `services/api/tests/test_structure.py`; engine tests: `tests/test_ifc_engine.py`
+- OpenAPI contract: `docs/api/openapi.json`; exporter: `services/api/scripts/export_openapi.py`
+- Frontend API client: `apps/web/src/lib/api-client.ts`; project UI: `apps/web/src/components/projects/`
 - Shared TypeScript types: `packages/shared/src/types.ts`
 
 ## Core Features
 
+- [Projects](docs/features/projects.md)
+- [IFC pipeline](docs/features/ifc-pipeline.md)
+- [Write amplification](docs/features/write-amplification.md)
+- [Clash & quantities](docs/features/clash-quantities.md)
+- [Metadata Extraction](docs/features/metadata-extraction.md)
 - [File Upload](docs/features/file-upload.md)
 - [File Browser](docs/features/file-browser.md)
 - [Dashboard](docs/features/dashboard.md)
-- [Metadata Extraction](docs/features/metadata-extraction.md)
 
 ## References
 

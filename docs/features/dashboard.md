@@ -2,11 +2,22 @@
 # Feature: Dashboard
 
 ## Purpose
-Provide an at-a-glance overview of file storage usage and recent upload activity.
+Provide an at-a-glance overview of the BIM archive: archive-wide **write
+amplification** and project/model/artifact counts, plus file storage usage and
+recent upload activity.
 
 ## Used By
 - UI: `/` page (dashboard home)
-- API: `GET /files/stats`, `GET /files`, `GET /files/stats/activity`
+- API: `GET /projects/stats` (archive rollup), `GET /files/stats`, `GET /files`, `GET /files/stats/activity`
+
+## Archive rollup (BIM)
+- `apps/web/src/components/dashboard/archive-stats.tsx` renders four cards:
+  **Projects**, **Source models**, **Derived artifacts**, and **Write
+  amplification** (derived bytes ÷ source bytes)
+- Data comes from `GET /projects/stats` → `service.projects.get_archive_stats`,
+  which classifies every object under `projects/` (models = source; metadata/
+  geometry/analysis = artifact) and computes the ratio live from B2 object sizes
+- See [Write amplification](write-amplification.md)
 
 ## Core Functions
 - `apps/web/src/components/dashboard/stats-cards.tsx` — 4 stat cards, plus the on-screen loading notice while the bucket scan runs
