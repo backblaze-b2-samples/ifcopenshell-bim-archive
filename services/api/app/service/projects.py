@@ -7,6 +7,7 @@ the pipeline run lives in `archive_runner.py` and ingest in `ingest.py`.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from datetime import UTC, datetime
@@ -34,6 +35,8 @@ from app.types import (
     WriteAmplification,
 )
 from app.types.formatting import humanize_bytes
+
+logger = logging.getLogger(__name__)
 
 PROJECTS_ROOT = "projects/"
 MODELS_SECTION = "models"
@@ -144,8 +147,27 @@ def create_project(payload: ProjectCreate) -> Project:
     return project
 
 
+def _safe_load_project(slug: str) -> Project | None:
+    """Load one project, tolerating a single unreadable/foreign manifest.
+
+    The manifest IS the record (no database), so a foreign object dropped in the
+    shared bucket — or future schema drift — could yield a manifest this app
+    can't parse. Aggregations must not let one bad object blank the whole
+    discovery hub, so a parse failure (Pydantic `ValidationError`/`ValueError`,
+    a bad JSON body, or a mid-scan disappearance) is logged and skipped. Genuine
+    infrastructure errors (e.g. B2 unreachable) are *not* caught here and still
+    surface, so a real outage isn't silently hidden as "no projects".
+    """
+    try:
+        return load_project(slug)
+    except (ProjectError, ValueError) as exc:
+        logger.warning("Skipping unreadable project manifest: slug=%s error=%s", slug, exc)
+        return None
+
+
 def list_projects() -> list[Project]:
-    projects = [load_project(slug_from_manifest_key(k)) for k in list_manifest_keys()]
+    loaded = (_safe_load_project(slug_from_manifest_key(k)) for k in list_manifest_keys())
+    projects = [p for p in loaded if p is not None]
     projects.sort(key=lambda p: p.created_at, reverse=True)
     return projects
 
@@ -237,7 +259,10 @@ def get_archive_stats() -> ProjectStats:
         elif section in ARTIFACT_SECTIONS:
             artifact_bytes += f.size_bytes
             artifact_count += 1
-    project_count = len(list_manifest_keys())
+    # Count only projects the library can actually load, so the dashboard's
+    # project count agrees with /projects (both tolerate a foreign/drifted
+    # manifest instead of one poisoning the surface).
+    project_count = len(list_projects())
     total = source_bytes + artifact_bytes
     ratio = (artifact_bytes / source_bytes) if source_bytes else 0.0
     return ProjectStats(

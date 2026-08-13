@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import { dropDeletedFileFromCache, qk } from "@/lib/queries";
-import type { FileMetadata } from "@ifcopenshell-bim-archive/shared";
+import { dropDeletedFileFromCache, markProjectRunning, qk } from "@/lib/queries";
+import type { FileMetadata, Project } from "@ifcopenshell-bim-archive/shared";
 
 function file(key: string): FileMetadata {
   return {
@@ -82,5 +82,54 @@ describe("dropDeletedFileFromCache", () => {
       dropDeletedFileFromCache(qc, "uploads/missing.txt"),
     ).not.toThrow();
     expect(qc.getQueryData(qk.files())).toBeUndefined();
+  });
+});
+
+function project(overrides: Partial<Project> = {}): Project {
+  return {
+    slug: "riverside",
+    name: "Riverside Hospital",
+    discipline: "coordination",
+    geometry_detail: "standard",
+    status: "draft",
+    created_at: "2026-08-13T00:00:00Z",
+    updated_at: "2026-08-13T00:00:00Z",
+    last_run_at: null,
+    models: [],
+    pipeline: [],
+    stats: null,
+    write_amplification: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+describe("markProjectRunning", () => {
+  let qc: QueryClient;
+
+  beforeEach(() => {
+    qc = new QueryClient();
+  });
+
+  it("flips the cached project to running with running stages", () => {
+    qc.setQueryData(qk.project("riverside"), project({ error: "old failure" }));
+
+    const previous = markProjectRunning(qc, "riverside");
+
+    expect(previous?.status).toBe("draft");
+    const now = qc.getQueryData<Project>(qk.project("riverside"))!;
+    expect(now.status).toBe("running");
+    expect(now.error).toBeNull();
+    expect(now.pipeline.map((s) => s.name)).toEqual([
+      "Parse",
+      "Extract Geometry",
+      "Analyze",
+    ]);
+    expect(now.pipeline.every((s) => s.status === "running")).toBe(true);
+  });
+
+  it("is a no-op when the project isn't cached", () => {
+    expect(markProjectRunning(qc, "missing")).toBeUndefined();
+    expect(qc.getQueryData(qk.project("missing"))).toBeUndefined();
   });
 });

@@ -29,6 +29,17 @@ def deflection_for(detail: str) -> float:
     return DEFLECTION_BY_DETAIL.get(detail, DEFLECTION_BY_DETAIL["standard"])
 
 
+# Curved-surface seed geometry. Circular profiles do two things a flat wall can't:
+# (1) the geometry-detail knob visibly refines their mesh, and (2) a compact IFC
+# circle fans out into a big tessellated mesh, carrying write amplification >1.0x.
+_COLUMN_RADIUS = 1.0
+_ELEMENT_HEIGHT = 3.0
+_CURVED_HEIGHT = 3.5
+_COLUMN_POSITIONS = ((0.5, 0.5), (5.5, 0.5), (0.5, 3.5), (5.5, 3.5))
+# (radius, x) of large curved masses; shared by both models (y=2.0) to force clashes.
+_CURVED_MASSES = ((3.5, 3.0), (3.0, 11.0), (2.5, 19.0))
+
+
 def engine_version() -> str:
     """IfcOpenShell version string, or 'unavailable' if the wheel won't import."""
     try:
@@ -47,10 +58,7 @@ def _pset_summary(element: Any) -> dict[str, Any]:
     except Exception:
         return {}
     # Drop the internal `id` bookkeeping key ifcopenshell adds per pset.
-    return {
-        name: {k: v for k, v in props.items() if k != "id"}
-        for name, props in psets.items()
-    }
+    return {name: {k: v for k, v in props.items() if k != "id"} for name, props in psets.items()}
 
 
 def parse_entity_tree(model: Any) -> dict[str, Any]:
@@ -163,9 +171,7 @@ def _new_model(project_name: str):
     )
     site = run("root.create_entity", model, ifc_class="IfcSite", name="Site")
     building = run("root.create_entity", model, ifc_class="IfcBuilding", name="Building")
-    storey = run(
-        "root.create_entity", model, ifc_class="IfcBuildingStorey", name="Level 1"
-    )
+    storey = run("root.create_entity", model, ifc_class="IfcBuildingStorey", name="Level 1")
     run("aggregate.assign_object", model, relating_object=project, products=[site])
     run("aggregate.assign_object", model, relating_object=site, products=[building])
     run("aggregate.assign_object", model, relating_object=building, products=[storey])
@@ -189,6 +195,49 @@ def _add_wall(model, body, storey, name, length, height, thickness):
     return wall
 
 
+def _add_cylinder(model, body, storey, ifc_class, name, radius, height, x, y):
+    """A vertical circular extrusion — a curved-surface element (column/core)."""
+    from ifcopenshell.api import run
+
+    product = run("root.create_entity", model, ifc_class=ifc_class, name=name)
+    profile = run("profile.add_parameterized_profile", model, ifc_class="IfcCircleProfileDef")
+    profile.Radius = radius
+    rep = run(
+        "geometry.add_profile_representation",
+        model,
+        context=body,
+        profile=profile,
+        depth=height,
+    )
+    run("geometry.assign_representation", model, product=product, representation=rep)
+    run(
+        "geometry.edit_object_placement",
+        model,
+        product=product,
+        matrix=((1, 0, 0, x), (0, 1, 0, y), (0, 0, 1, 0), (0, 0, 0, 1)),
+    )
+    run("spatial.assign_container", model, relating_structure=storey, products=[product])
+    return product
+
+
+def _add_curved_elements(model, body, storey, column_prefix, mass_names):
+    """Feature columns + large curved masses; co-located across models for clashes."""
+    for i, (x, y) in enumerate(_COLUMN_POSITIONS, start=1):
+        _add_cylinder(
+            model,
+            body,
+            storey,
+            "IfcColumn",
+            f"{column_prefix} {i}",
+            _COLUMN_RADIUS,
+            _ELEMENT_HEIGHT,
+            x,
+            y,
+        )
+    for name, (radius, x) in zip(mass_names, _CURVED_MASSES, strict=True):
+        _add_cylinder(model, body, storey, "IfcWall", name, radius, _CURVED_HEIGHT, x, 2.0)
+
+
 def _author_architectural() -> bytes:
     from ifcopenshell.api import run
 
@@ -205,6 +254,9 @@ def _author_architectural() -> bytes:
     )
     run("geometry.assign_representation", model, product=slab, representation=slab_rep)
     run("spatial.assign_container", model, relating_structure=storey, products=[slab])
+    _add_curved_elements(
+        model, body, storey, "Column", ("Rotunda Wall", "Stair Core", "Curved Facade")
+    )
     space = run("root.create_entity", model, ifc_class="IfcSpace", name="Room 101")
     run("aggregate.assign_object", model, relating_object=storey, products=[space])
     pset = run("pset.add_pset", model, product=w1, name="Pset_WallCommon")
@@ -235,6 +287,13 @@ def _author_structural() -> bytes:
     )
     run("geometry.assign_representation", model, product=beam, representation=beam_rep)
     run("spatial.assign_container", model, relating_structure=storey, products=[beam])
+    _add_curved_elements(
+        model,
+        body,
+        storey,
+        "Structural Column",
+        ("Core Cylinder", "Silo Wall", "Curved Retaining Wall"),
+    )
     pset = run("pset.add_pset", model, product=w, name="Pset_WallCommon")
     run("pset.edit_pset", model, pset=pset, properties={"LoadBearing": True})
     return model.to_string().encode("utf-8")

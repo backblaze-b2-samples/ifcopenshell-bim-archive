@@ -36,6 +36,7 @@ import type {
   ProjectCreate,
   ProjectUpdate,
 } from "@ifcopenshell-bim-archive/shared";
+import { PIPELINE_STAGE_NAMES } from "@/lib/bim";
 
 // Single source of truth for query keys. Keep these tightly scoped so that
 // invalidating "files" doesn't blow away unrelated caches, and so an IDE
@@ -262,12 +263,55 @@ export function useDeleteProject() {
   });
 }
 
-/** Run the pipeline. The request blocks until the run finishes, then every
- *  project view (detail, list, stats, artifacts) is reconciled. */
+/**
+ * Optimistically flip the cached project to "running" with running pipeline
+ * stages, and return the previous snapshot for rollback.
+ *
+ * The Run request blocks for the whole run, so on the stay-on-page path nothing
+ * would otherwise reflect progress — the status badge stayed "Draft" and the
+ * per-stage spinners never appeared until the response landed. Projecting the
+ * same "running" state the backend persists mid-run lets the existing
+ * StatusBadge spinner + StageIcon spinners render during the wait.
+ *
+ * Exported for tests — `useRunProject` is its only production caller.
+ */
+export function markProjectRunning(
+  qc: QueryClient,
+  slug: string,
+): Project | undefined {
+  const previous = qc.getQueryData<Project>(qk.project(slug));
+  if (previous) {
+    qc.setQueryData<Project>(qk.project(slug), {
+      ...previous,
+      status: "running",
+      error: null,
+      pipeline: PIPELINE_STAGE_NAMES.map((name) => ({
+        name,
+        status: "running" as const,
+        detail: "",
+      })),
+    });
+  }
+  return previous;
+}
+
+/** Run the pipeline. The request blocks until the run finishes; the cached
+ *  project is flipped to "running" for the wait, then every project view
+ *  (detail, list, stats, artifacts) is reconciled — or rolled back on error. */
 export function useRunProject(slug: string) {
   const qc = useQueryClient();
-  return useMutation<Project, ApiError, void>({
+  return useMutation<Project, ApiError, void, { previous?: Project }>({
     mutationFn: () => runProject(slug),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: qk.project(slug) });
+      return { previous: markProjectRunning(qc, slug) };
+    },
+    onError: (_err, _vars, context) => {
+      // Don't leave the UI stuck on "running" if the request fails.
+      if (context?.previous) {
+        qc.setQueryData(qk.project(slug), context.previous);
+      }
+    },
     onSuccess: (project) => {
       qc.setQueryData(qk.project(slug), project);
       qc.invalidateQueries({ queryKey: qk.projects() });

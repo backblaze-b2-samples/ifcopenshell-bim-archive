@@ -25,7 +25,12 @@ B2.
 
 ## Inputs
 - Source IFC models under `projects/<slug>/models/<discipline>/*.ifc` (B2)
-- `geometry_detail` (coarse/standard/fine) → IfcOpenShell linear deflection
+- `geometry_detail` (coarse/standard/fine) → IfcOpenShell linear deflection.
+  Linear deflection only refines **curved** surfaces, so the synthetic seed
+  models include circular columns and large curved masses (rotunda / core /
+  silo). A finer detail visibly raises their mesh vertex count and the
+  `geometry/<model>.obj.zip` size; a planar-only model would be byte-identical
+  across detail levels.
 
 ## Outputs (archived under the project prefix on B2)
 - `metadata/<model>.json` — parsed entity tree (schema, storeys, spaces,
@@ -70,7 +75,8 @@ always `cpu`.
 - Test files: `services/api/tests/test_ifc_engine.py`,
   `services/api/tests/test_projects_service.py`
 - Required cases: author seed → parse → mesh (real, in-process), clash overlap,
-  quantities CSV, cross-model-only clash filtering
+  quantities CSV, cross-model-only clash filtering, geometry detail refines
+  curved meshes (fine has more vertices than standard)
 - Focused verify command: `cd services/api && .venv/bin/python -m pytest tests/test_ifc_engine.py`
 - Default pre-PR verify command: `pnpm verify`
 - Pass criteria: the child produces metadata/meshes/AABBs and a non-zero mesh count

@@ -68,3 +68,30 @@ def test_child_run_produces_geometry_metadata_and_aabbs(tmp_path: Path):
     objs = list((out_dir / "meshes").glob("*.obj"))
     assert len(objs) == summary["mesh_count"]
     assert "v " in objs[0].read_text()  # OBJ vertex lines
+
+
+def test_geometry_detail_changes_curved_mesh(tmp_path: Path):
+    """Choosing a finer geometry detail must materially change the mesh.
+
+    The seed's circular columns/cores are curved surfaces, so a smaller linear
+    deflection ("fine") tessellates them into more facets than "standard". A
+    planar-only model would be byte-for-byte identical — that was the bug.
+    """
+    data = author_seed_models()["architectural"]
+    ifc_path = tmp_path / "arch.ifc"
+    ifc_path.write_bytes(data)
+
+    def vertex_count(detail: str) -> int:
+        out = tmp_path / detail
+        child_run(str(ifc_path), str(out), detail)
+        return sum(
+            1
+            for obj in (out / "meshes").glob("*.obj")
+            for line in obj.read_text().splitlines()
+            if line.startswith("v ")
+        )
+
+    standard = vertex_count("standard")
+    fine = vertex_count("fine")
+    assert standard > 0
+    assert fine > standard

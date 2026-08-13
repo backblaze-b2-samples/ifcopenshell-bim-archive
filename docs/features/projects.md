@@ -54,16 +54,29 @@ button. Edit mode opens pre-filled with no default hints.
 - Delete of a missing project → 404
 - `manifest.json` is the record; the `models` list is re-derived from B2 on read,
   so a browser (BYO) ingest shows up without a manifest write
+- **Resilient listing**: a single manifest this app can't parse (schema drift, or
+  a foreign object dropped in the shared bucket) is logged and skipped by
+  `list_projects` rather than 500-ing the whole library. `get_archive_stats`
+  counts the same valid set (`len(list_projects())`), so the dashboard's project
+  count and the library agree. Genuine infra errors (B2 unreachable) still
+  surface — only parse failures are tolerated.
 
 ## UX States
 - Empty — "No projects yet" with a create CTA
 - Loading — skeleton cards / detail skeletons
 - Error — inline `ErrorState` with retry
+- **Running (stay-on-page)** — the Run request blocks for the whole run, so the
+  cached project is optimistically flipped to `running` (`markProjectRunning` in
+  `lib/queries.ts`): the status badge shows a spinning "Running" and the pipeline
+  stages show per-stage spinners until the response lands, then it reconciles
+  (or rolls back on error)
 
 ## Verification
-- Test files: `services/api/tests/test_projects_service.py`
+- Test files: `services/api/tests/test_projects_service.py`,
+  `apps/web/src/lib/queries.test.ts` (`markProjectRunning` optimistic state)
 - Required cases: create/read/update/delete, slug uniqueness, capabilities,
-  amplification accounting
+  amplification accounting, resilient listing skips a bad manifest, dashboard
+  project count agrees with the library
 - Focused verify command: `cd services/api && .venv/bin/python -m pytest tests/test_projects_service.py`
 - Default pre-PR verify command: `pnpm verify`
 - Pass criteria: CRUD round-trips against the mocked repo; capabilities report `device: cpu`

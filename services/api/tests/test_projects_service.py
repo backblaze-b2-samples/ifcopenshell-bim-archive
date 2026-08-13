@@ -80,6 +80,30 @@ def test_slug_uniqueness(store):
     assert b.slug == "tower-a-2"
 
 
+def test_list_projects_skips_unreadable_manifest(store):
+    """One foreign/legacy manifest must not blank the whole Projects library."""
+    projects.create_project(ProjectCreate(name="Good One"))
+    # A manifest that doesn't conform to this app's schema (foreign object in the
+    # shared bucket, or future drift): unknown status + missing required fields.
+    store["manifests"]["legacy"] = {"slug": "legacy", "status": "archived"}
+
+    listed = projects.list_projects()
+
+    slugs = {p.slug for p in listed}
+    assert "good-one" in slugs
+    assert "legacy" not in slugs
+
+
+def test_archive_stats_project_count_agrees_with_library(store):
+    """The dashboard count and the library list tolerate the same bad manifest."""
+    projects.create_project(ProjectCreate(name="Good One"))
+    store["manifests"]["legacy"] = {"slug": "legacy", "status": "archived"}
+
+    stats = projects.get_archive_stats()
+
+    assert stats.project_count == len(projects.list_projects()) == 1
+
+
 def test_capabilities_reports_cpu_and_engine():
     caps = projects.get_capabilities()
     assert caps.engine == "IfcOpenShell"

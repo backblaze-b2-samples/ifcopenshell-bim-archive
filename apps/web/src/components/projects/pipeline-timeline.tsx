@@ -1,9 +1,8 @@
 import { Check, CircleDashed, Loader2, X } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PIPELINE_STAGE_NAMES } from "@/lib/bim";
 import type { PipelineStage, ProjectStatus } from "@ifcopenshell-bim-archive/shared";
-
-const DEFAULT_STAGES = ["Parse", "Extract Geometry", "Analyze"];
 
 function StageIcon({ status }: { status: ProjectStatus }) {
   if (status === "succeeded") return <Check className="h-4 w-4 text-[var(--brand-b2)]" />;
@@ -22,7 +21,7 @@ export function PipelineTimeline({
   const stages =
     pipeline.length > 0
       ? pipeline
-      : DEFAULT_STAGES.map((name) => ({
+      : PIPELINE_STAGE_NAMES.map((name) => ({
           name,
           status: "draft" as ProjectStatus,
           detail: "",

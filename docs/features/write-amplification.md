@@ -40,14 +40,22 @@ footprint meets or exceeds the source — and B2 holds all of it.
 - No source models yet → ratio `0.0`, source `0 B`
 - Reference PDFs/images stored elsewhere in the bucket do not affect a project's
   ratio (only the project prefix is scanned)
+- The one-click demo (load samples → run at the default **standard** detail)
+  amplifies: the synthetic seed models carry curved geometry whose tessellated
+  OBJ, metadata JSON, and clash report together exceed the source IFC bytes, so
+  the ratio lands above `1.0`. `test_full_pipeline_with_real_ifcopenshell` guards
+  this so seed models can't regress to trivial (de-amplifying) geometry.
 
 ## UX States
 - Panel only renders once `source_bytes > 0` (after a model is ingested/run)
 
 ## Verification
 - Test files: `services/api/tests/test_projects_service.py`
-  (`test_amplification_from_object_sizes`)
-- Required cases: source vs. artifact classification, manifest excluded, ratio
+  (`test_amplification_from_object_sizes`),
+  `services/api/tests/test_archive_runner_integration.py`
+  (`test_full_pipeline_with_real_ifcopenshell` — the default demo amplifies ≥ 1.0)
+- Required cases: source vs. artifact classification, manifest excluded, ratio,
+  default one-click demo lands above 1.0×
 - Focused verify command: `cd services/api && .venv/bin/python -m pytest tests/test_projects_service.py -k amplification`
 - Default pre-PR verify command: `pnpm verify`
 - Pass criteria: ratio equals artifact_bytes ÷ source_bytes

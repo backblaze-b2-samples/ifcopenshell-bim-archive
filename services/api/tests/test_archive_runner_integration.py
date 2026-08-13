@@ -92,7 +92,11 @@ def test_full_pipeline_with_real_ifcopenshell(b2):
     # Write amplification: derived artifacts vs. source IFC bytes.
     amp = result.write_amplification
     assert amp is not None and amp.source_bytes > 0 and amp.artifact_bytes > 0
-    assert amp.ratio > 0
+    # The one-click demo runs at the default "standard" detail and must genuinely
+    # amplify: derived artifacts meet or exceed the source IFC bytes (the app's
+    # whole thesis). This guards against seed models too trivial to fan out.
+    assert amp.artifact_bytes >= amp.source_bytes
+    assert amp.ratio >= 1.0
 
     # Real artifacts were archived under the project prefix.
     keys = set(b2)

@@ -4,6 +4,11 @@ import type {
   ProjectStatus,
 } from "@ifcopenshell-bim-archive/shared";
 
+// The pipeline's ordered stages — one source of truth for the timeline UI and
+// the optimistic "running" projection in queries.ts. Mirrors the backend STAGES
+// in services/api/app/service/archive_runner.py.
+export const PIPELINE_STAGE_NAMES = ["Parse", "Extract Geometry", "Analyze"] as const;
+
 // Finite option sets — the single source of truth for the create/edit selectors,
 // the ingest discipline picker, and label rendering. Never free text.
 export const DISCIPLINE_OPTIONS: { value: Discipline; label: string }[] = [
