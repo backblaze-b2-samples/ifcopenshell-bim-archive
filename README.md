@@ -20,13 +20,21 @@ Explore the official [Backblaze B2 AI integrations and sample applications](http
 
 ## What it looks like
 
-**Projects** — a library of building projects, each a B2 prefix with its own manifest:
+**Dashboard** — an archive-wide rollup of project, source-model, and derived-artifact counts, the headline write-amplification ratio, and B2 storage and upload activity, all measured live from the bucket.
+
+![Dashboard with archive-wide BIM rollup, write-amplification ratio, and B2 upload activity](docs/images/dashboard.png)
+
+**Projects** — a library of building projects, each a B2 prefix with its own manifest, showing per-project discipline, run status, and write-amplification ratio.
 
 ![Projects library showing building-project cards with status and write-amplification](docs/images/projects-library.png)
 
-**Project detail** — the Parse → Extract Geometry → Analyze pipeline, model insight, write amplification, and the project-scoped asset explorer:
+**Project detail** — the Parse → Extract Geometry → Analyze pipeline, model insight, the write-amplification panel, and the project-scoped B2 asset explorer.
 
 ![Project detail showing the pipeline timeline, BIM stats, write-amplification panel, and asset explorer](docs/images/project-detail.png)
+
+**Upload** — a drag-and-drop dropzone that presigns a direct browser-to-B2 PUT, doubling as project model ingest.
+
+![Upload page with a drag-and-drop dropzone for direct browser-to-B2 uploads](docs/images/upload.png)
 
 > **Deploy your own in one click** → [Deploy to Vercel](#deploying-to-vercel). One project, one origin, no CORS to wire up.
 
