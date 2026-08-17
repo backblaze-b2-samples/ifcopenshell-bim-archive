@@ -7,9 +7,6 @@ The headline is **write amplification**: a handful of IFC models fan out into ge
 
 IfcOpenShell runs as a local, keyless, CPU-only native Python wheel — **the only secret you need is your B2 credentials.** No GPU, no second API key, ~$0 to run a full demo.
 
-<!-- labs-project-page -->
-Explore this sample on the [Backblaze Labs project page](https://backblazelabs.com/projects/ifcopenshell-bim-archive/).
-
 Explore the official [Backblaze B2 AI integrations and sample applications](https://www.backblaze.com/cloud-storage/b2-ai-integrations?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-ifcopenshell-bim-archive) directory and the checked-in [local OpenAPI contract](docs/api/openapi.json).
 
 **What you get out of the box:**
